@@ -2,6 +2,13 @@ from sodapy import Socrata
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import shape
+from shapely.geometry import Point
+import matplotlib.pyplot as plt
+import psycopg2
+from sqlalchemy import create_engine
+import ast
+import json
+from dotenv import load_dotenv
 
 def pull_opensf_data(site, 
                      endpoint, 
@@ -87,3 +94,19 @@ def shape_extract(x):
         return shape(x)
     except Exception as e:
         return None
+
+def spatial_join(df, df_spatial_txt, parcels_df):
+    #Spatially join fire incidents points with parcel polygons to add parcel data 
+    df['geometry'] = df[df_spatial_txt].apply(shape_extract)
+    geodf = gpd.GeoDataFrame(df, crs='EPSG:4326')
+    parcels_geodf = gpd.GeoDataFrame(parcels_df, crs='EPSG:4326')
+    joined_geo_df = gpd.sjoin(geodf, parcels_geodf, how="left", predicate='within')
+    return df, joined_geo_df
+
+
+def upload_to_postgres(df, connection_str, tablename):
+    #Upload data to postgres database (running locally) to create extract and allow some joins to be done in SQL
+    engine = create_engine(connection_str)
+    df.to_sql(tablename, engine, if_exists='replace', index=False)
+    engine.dispose()
+    print('Table uploaded')
